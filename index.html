@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#18301f">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Descontos">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Desconto de Duplicatas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">
@@ -10,7 +18,7 @@
 /* Layout: faixa de cabeçalho escura com abas; abaixo, área de trabalho clara em largura cheia, tabelas densas */
 :root{
   --bg:#f3f5f2; --surface:#ffffff; --sunk:#e9ece7; --line:#d5dbd3; --fg:#18211b; --muted:#5d685f;
-  --band:#18301f; --band-fg:#e8efe6; --band-muted:#9fb3a3; --accent:#2f7a45; --accent-fg:#ffffff;
+  --band:#0f321e; --band-fg:#e8efe6; --band-muted:#9fb3a3; --accent:#2f7a45; --accent-fg:#ffffff;
   --st-livre:#2f7a45; --st-analise:#b7791f; --st-aprovada:#2b6cb0; --st-antecipada:#3c3f8f; --st-cobranca:#8a3f8c; --st-bloqueada:#c0392b; --st-reservada:#1f8a87; --st-recompra:#c2571a; --st-quitada:#7d867f;
   --warn-bg:#fdf3e1; --warn-fg:#8a5a10; --bad-bg:#fbe7e4; --bad-fg:#a1281c;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -130,11 +138,63 @@ ol.steps{margin:0;padding-left:20px;display:grid;gap:4px;color:var(--muted)}
 .userbox{display:flex;align-items:center;gap:8px;font-size:12px;opacity:.85}
 .userbox button{font:inherit;font-size:12px;background:transparent;color:inherit;border:1px solid currentColor;border-radius:5px;padding:3px 8px;cursor:pointer}
 </style>
+
+<style>
+/* ---------- versão celular: tabelas viram cartões ---------- */
+@media (max-width:700px){
+  .hrow{align-items:flex-start}
+  h1{font-size:19px}
+  .userbox{width:100%;justify-content:space-between}
+  .scope .wrap{flex-wrap:wrap;gap:8px}
+  .scope label{flex:1 1 140px}
+  .scope input,.scope select{width:100%}
+  .kpis{grid-template-columns:minmax(0,1fr)}
+  .kpi .v{font-size:22px}
+  .toolbar > *{flex:1 1 100%}
+  .tbl-wrap.cards{overflow:visible;border:0;background:transparent}
+  .tbl-wrap.cards table,.tbl-wrap.cards tbody,.tbl-wrap.cards tr,.tbl-wrap.cards td{display:block;width:100%}
+  .tbl-wrap.cards thead{display:none}
+  .tbl-wrap.cards tr{background:var(--surface);border:1px solid var(--line);border-radius:8px;margin-bottom:8px;padding:6px 10px;position:relative}
+  .tbl-wrap.cards td{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border:0;padding:4px 0;text-align:right;white-space:normal}
+  .tbl-wrap.cards td::before{content:attr(data-label);color:var(--muted);font-size:11px;text-align:left;flex:0 0 38%;padding-top:2px}
+  .tbl-wrap.cards td[data-label=""]::before{display:none}
+  .tbl-wrap.cards td[data-label=""]{justify-content:flex-start}
+  .tbl-wrap.cards td::before{font-family:"IBM Plex Sans",system-ui,sans-serif;letter-spacing:0}
+  .tbl-wrap.cards td{padding:2px 0}
+  .tbl-wrap.cards td:first-child:has(input[type=checkbox]){position:absolute;top:8px;left:10px;width:auto;padding:0}
+  .tbl-wrap.cards tr:has(td:first-child input[type=checkbox]){padding-top:34px}
+  .tbl-wrap.cards tbody tr:hover td{background:transparent}
+  .tbl-wrap.cards td .nome{white-space:normal;max-width:none}
+  .tbl-wrap.cards tfoot{display:block}
+  .tbl-wrap.cards tfoot tr{background:var(--sunk)}
+  .bulk .wrap{flex-wrap:wrap}
+  .drawer{width:100%}
+}
+</style>
+
+<style>
+/* ---------- identidade Uniggel ---------- */
+:root{--brand-orange:#ff6900;--brand-green:#0f321e}
+.brandrow{display:flex;align-items:center;gap:16px}
+.brandlogo{height:40px;width:auto;display:block}
+.brandsep{width:1px;align-self:stretch;background:rgba(255,255,255,.25);margin-block:4px}
+nav button[aria-selected="true"]{border-bottom-color:var(--brand-orange)!important}
+header{border-top:3px solid var(--brand-orange)}
+#login{background:var(--brand-green) url("fundo-login.jpg") center/cover no-repeat}
+#login form{border-top:4px solid var(--brand-orange)}
+#login button{background:var(--brand-orange)!important;color:#fff}
+#login button:hover{filter:brightness(.95)}
+.loginlogo{width:190px;height:auto;margin:0 auto 6px;display:block}
+#login h2{text-align:center}
+#login form > .muted{text-align:center}
+@media (max-width:700px){.brandlogo{height:30px}.brandrow{gap:10px}}
+</style>
 </head>
 <body>
 
 
 <div id="login" hidden><form id="loginf" autocomplete="on">
+  <img src="logo-uniggel.png" alt="Uniggel Sementes" class="loginlogo">
   <h2>Desconto de Duplicatas</h2>
   <div class="muted" style="font-size:13px">Entre com seu e-mail e senha.</div>
   <label>E-mail <input type="email" id="lg-e" required autocomplete="username"></label>
@@ -145,10 +205,10 @@ ol.steps{margin:0;padding-left:20px;display:grid;gap:4px;color:var(--muted)}
 <header>
   <div class="wrap">
     <div class="hrow">
-      <div>
+      <div class="brandrow"><img src="logo-uniggel-branco.png" alt="Uniggel Sementes" class="brandlogo"><span class="brandsep" aria-hidden="true"></span><div>
         <h1>Desconto de Duplicatas</h1>
         <div class="basechip" id="basechip">Carregando a base…</div>
-      </div>
+      </div></div>
       <div class="userbox" id="userbox" hidden><span id="useremail"></span><button type="button" id="logout">Sair</button></div>
     </div>
     <nav role="tablist" id="tabs">
@@ -958,6 +1018,18 @@ async function boot(){
   db.doc("config/fundos").onSnapshot(s=>{S.fundos=(s.exists&&s.data().lista)||[];datalists()},onErr);
 }
 boot();
+})();
+</script>
+<script>if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));</script>
+<script>
+/* rótulos das colunas para a versão celular (cada célula recebe o nome da coluna) */
+(function(){
+  function label(root){root.querySelectorAll(".tbl-wrap").forEach(w=>{const t=w.querySelector("table");if(!t)return;
+    const ths=[...t.querySelectorAll("thead th")].map(th=>th.textContent.trim().replace(/[↑↓]/g,"").trim());if(!ths.length)return;
+    w.classList.add("cards");
+    t.querySelectorAll("tbody tr, tfoot tr").forEach(tr=>{let i=0;[...tr.children].forEach(td=>{const n=+(td.getAttribute("colspan")||1);if(!td.hasAttribute("data-label"))td.setAttribute("data-label",n>1?"":(ths[i]||""));i+=n})})})}
+  let q;const run=()=>{cancelAnimationFrame(q);q=requestAnimationFrame(()=>label(document))};
+  new MutationObserver(run).observe(document.body,{childList:true,subtree:true});run();
 })();
 </script>
 </body>
