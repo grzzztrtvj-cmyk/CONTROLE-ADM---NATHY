@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restaurar dados</title>
+<style>
+:root{--bg:#f3f5f2;--surface:#fff;--fg:#18211b;--muted:#5d685f;--line:#d5dbd3;--band:#18301f;--ok:#2f7a45;--bad:#c0392b}
+@media (prefers-color-scheme:dark){:root{--bg:#121813;--surface:#1b231d;--fg:#e6ece6;--muted:#9aa69c;--line:#2e3a31;--band:#0e1a12}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.box{max-width:560px;margin:40px auto;padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+h1{font-size:20px;margin:0 0 8px}
+p{color:var(--muted);margin:0 0 14px}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:10px}
+input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg)}
+button{font:inherit;font-weight:600;padding:10px 14px;border:0;border-radius:6px;background:var(--band);color:#fff;cursor:pointer}
+button:disabled{opacity:.6;cursor:default}
+#log{margin-top:14px;font-size:13px;white-space:pre-wrap}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+@media (max-width:600px){.box{margin:16px}}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Restaurar dados do site antigo</h1>
+  <p>Use uma vez só, logo depois de publicar, para trazer as notas, marcações, fundos, bloqueios e recompras do site antigo.</p>
+  <div id="loginbox">
+    <label>E-mail <input type="email" id="e" autocomplete="username"></label>
+    <label>Senha <input type="password" id="p" autocomplete="current-password"></label>
+    <button id="entrar">Entrar</button>
+  </div>
+  <div id="restbox" hidden>
+    <label>Arquivo de backup (.json) <input type="file" id="f" accept=".json,application/json"></label>
+    <button id="go" disabled>Restaurar</button>
+  </div>
+  <div id="log" role="status"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+(async function(){
+  const sb=supabase.createClient(APP_CONFIG.SUPABASE_URL,APP_CONFIG.SUPABASE_KEY);
+  const $=s=>document.getElementById(s),log=(t,c)=>{const d=document.createElement("div");if(c)d.className=c;d.textContent=t;$("log").appendChild(d)};
+  const show=()=>{$("loginbox").hidden=true;$("restbox").hidden=false};
+  const {data}=await sb.auth.getSession();if(data&&data.session)show();
+  $("entrar").onclick=async()=>{const {error}=await sb.auth.signInWithPassword({email:$("e").value.trim(),password:$("p").value});if(error)log("E-mail ou senha incorretos.","bad");else show()};
+  $("f").onchange=()=>{$("go").disabled=!$("f").files.length};
+  $("go").onclick=async()=>{
+    $("go").disabled=true;$("log").textContent="";
+    let j;try{j=JSON.parse(await $("f").files[0].text())}catch(e){log("Arquivo inválido.","bad");return}
+    const docs=(j.docs||[]).map(d=>({col:d.col,id:d.id,data:d.data}));
+    log(`${docs.length} registros no arquivo. Gravando…`);
+    const small=docs.filter(d=>d.col!=="chunks"),big=docs.filter(d=>d.col==="chunks");
+    try{
+      for(let i=0;i<small.length;i+=100){const {error}=await sb.from("docs").upsert(small.slice(i,i+100));if(error)throw error;log(`  ${Math.min(i+100,small.length)} de ${small.length} marcações e configurações`)}
+      for(let i=0;i<big.length;i++){const {error}=await sb.from("docs").upsert(big[i]);if(error)throw error;log(`  base de notas: parte ${i+1} de ${big.length}`)}
+      log("Pronto! Abra o site principal.","ok");
+    }catch(e){log("Erro ao gravar: "+(e.message||e),"bad");$("go").disabled=false}
+  };
+})();
+</script>
+</body>
+</html>
