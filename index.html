@@ -230,6 +230,7 @@ header{border-top:3px solid var(--brand-orange)}
 <div id="overlay"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script src="db.js"></script>
@@ -721,6 +722,7 @@ async function openNota(id){
     <div class="panel" style="padding:14px;margin-top:12px"><span class="eyebrow">Arquivos da nota</span>
       <div class="row" style="margin-top:8px"><label class="row" style="gap:6px"><input type="checkbox" id="d-p" ${a.includes("P")?"checked":""} ${ro}> PDF baixado</label>
       <label class="row" style="gap:6px"><input type="checkbox" id="d-x" ${a.includes("X")?"checked":""} ${ro}> XML baixado</label></div></div>
+    <div class="panel" id="docs-box" style="padding:14px;margin-top:12px"></div>
     ${S.recompras[id]?`<div class="panel" style="padding:14px;margin-top:12px"><span class="eyebrow">Recompra</span>
       <p style="margin:8px 0">${S.recompras[id].situacao==="feita"?`Recompra feita em ${dBR(S.recompras[id].feitaEm)}`:"Recompra pendente"} · ${esc(S.recompras[id].fundo)} · <span class="num">${money(S.recompras[id].valor)}</span>${S.recompras[id].pagoEm?` · cliente pagou em ${dBR(S.recompras[id].pagoEm)}`:""}</p>${recMot(S.recompras[id])?`<p style="margin:0 0 8px"><span class="muted">Motivo:</span> ${esc(recMot(S.recompras[id]))}</p>`:""}
       ${S.canWrite?`<button class="btn sm danger" id="d-rdel">Excluir recompra</button>`:""}</div>`
@@ -758,6 +760,124 @@ async function openNota(id){
     try{await S.db.collection("recompras").doc(id).delete();toast("Recompra excluída");close()}catch(e){toast(dbErr(e))}};
   const dq=$("#d-q");if(dq)dq.onclick=async()=>{try{await S.db.collection("baixas").doc(id).set({nf:n.num,par:n.par,nome:n.nome,saldoProtheus:n.saldo0,por:S.uid||"",em:new Date().toISOString()});toast("Nota marcada como quitada");close()}catch(e){toast(dbErr(e))}};
   const uq=$("#d-unq");if(uq)uq.onclick=async()=>{try{await S.db.collection("baixas").doc(id).delete();toast("Quitação desfeita");close()}catch(e){toast(dbErr(e))}};
+  renderDocsNota(n,m);
+}
+
+/* ---------- documentos (boletos, notas, termos) e resumo do cliente ---------- */
+const BUCKET="documentos";
+const slug=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Za-z0-9._ -]/g,"_").replace(/\s+/g," ").trim();
+const nfKey=n=>n.fil+"_"+parseInt(n.num,10);
+const termoDir=(fundo,cessao)=>"termo/"+slug(fundo).toUpperCase()+"__"+slug(cessao);
+function docTipo(name){const u=name.toUpperCase();if(/BOLETO/.test(u))return "Boleto";if(/TERMO/.test(u))return "Termo de cessão";if(/\.XML$/.test(u))return "XML da nota";if(/\.PDF$/.test(u))return "PDF da nota";return "Arquivo"}
+async function listDir(dir){if(!window.SB)return[];try{const {data,error}=await SB.storage.from(BUCKET).list(dir,{limit:200,sortBy:{column:"name",order:"asc"}});if(error)return[];return (data||[]).filter(f=>f.id).map(f=>({path:dir+"/"+f.name,name:f.name,tipo:docTipo(f.name),size:(f.metadata&&f.metadata.size)||0}))}catch(e){return[]}}
+async function baixar(path,name){try{const {data,error}=await SB.storage.from(BUCKET).createSignedUrl(path,600,{download:name||true});if(error)throw error;const a=document.createElement("a");a.href=data.signedUrl;a.download=name||"";document.body.appendChild(a);a.click();a.remove()}catch(e){toast("Não deu para baixar o arquivo.")}}
+async function baixarZip(files,zipName){
+  if(!files.length)return toast("Nenhum arquivo para baixar.");
+  if(!window.JSZip){for(const f of files)await baixar(f.path,f.name);return}
+  toast("Preparando o arquivo .zip…");const z=new JSZip();
+  for(const f of files){try{const {data,error}=await SB.storage.from(BUCKET).download(f.path);if(!error&&data)z.file(f.zipPath||f.name,data)}catch(e){}}
+  const blob=await z.generateAsync({type:"blob"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=zipName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
+const kb=b=>b>1048576?(b/1048576).toFixed(1)+" MB":Math.max(1,Math.round(b/1024))+" KB";
+function docRows(files,canDel){return files.map(f=>`<div class="it"><span style="min-width:0"><span class="tag">${esc(f.tipo)}</span> <span style="word-break:break-all">${esc(f.name)}</span> <span class="muted" style="font-size:11px">${kb(f.size)}</span></span><span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn sm" data-dl="${esc(f.path)}" data-nm="${esc(f.name)}">Baixar</button>${canDel?`<button class="btn sm danger" data-rm="${esc(f.path)}">Apagar</button>`:""}</span></div>`).join("")}
+
+async function renderDocsNota(n,m){
+  const box=$("#docs-box");if(!box)return;
+  const dir="nota/"+nfKey(n),tdir=m&&m.fundo&&m.cessao?termoDir(m.fundo,m.cessao):null;
+  box.innerHTML=`<span class="eyebrow">Documentos</span><div class="muted" style="font-size:12px;margin-top:6px">Carregando…</div>`;
+  const [fs,ts]=await Promise.all([listDir(dir),tdir?listDir(tdir):Promise.resolve([])]);
+  if(S.open!==n.id)return;
+  const all=[...fs,...ts];
+  box.innerHTML=`<div class="row" style="justify-content:space-between"><span class="eyebrow">Documentos</span>${all.length>1?`<button class="btn sm" id="dz">Baixar todos (.zip)</button>`:""}</div>
+    <div class="list" style="margin-top:8px">${docRows(fs,S.canWrite)}${docRows(ts,S.canWrite)||""}${all.length?"":`<div class="muted" style="font-size:12px">Nenhum arquivo anexado a esta nota.</div>`}</div>
+    ${S.canWrite?`<div class="form" style="margin-top:10px"><label>Anexar nota/boleto (PDF ou XML)<input type="file" id="up-n" multiple accept=".pdf,.xml,.png,.jpg,.jpeg"></label>
+      ${tdir?`<label>Anexar termo de cessão ${esc(m.fundo)} ${esc(m.cessao)}<input type="file" id="up-t" accept=".pdf"></label>`:""}<span class="muted" style="font-size:11px" id="up-st"></span></div>`:""}`;
+  box.onclick=async e=>{const d=e.target.closest("[data-dl]");if(d)return baixar(d.dataset.dl,d.dataset.nm);
+    const r=e.target.closest("[data-rm]");if(r){if(r.dataset.c!=="1"){r.dataset.c="1";r.textContent="Confirmar";return}
+      const {error}=await SB.storage.from(BUCKET).remove([r.dataset.rm]);toast(error?"Não deu para apagar.":"Arquivo apagado");renderDocsNota(n,m);return}
+    if(e.target.closest("#dz"))baixarZip(all.map(f=>({...f})),`NF ${parseInt(n.num,10)} - ${slug(n.nome)}.zip`)};
+  const up=async(inp,base)=>{const st=$("#up-st");let ok=0;for(const f of inp.files){st.textContent=`Enviando ${f.name}…`;
+      const {error}=await SB.storage.from(BUCKET).upload(base+"/"+slug(f.name),f,{upsert:true,contentType:f.type||undefined});if(!error)ok++}
+    toast(ok+" arquivo(s) anexado(s)");renderDocsNota(n,m)};
+  const un=$("#up-n");if(un)un.onchange=()=>up(un,dir);const ut=$("#up-t");if(ut)ut.onchange=()=>up(ut,tdir);
+}
+
+function resumoCliente(o){
+  const key=digits(o.cpf)||o.cli;const ns=(S.all||S.base).filter(n=>(digits(n.cpf)||n.cli)===key&&!ocultar(n));
+  const lab={antecipada:"Antecipada",cobranca:"Cobrança simples",analise:"Em análise",aprovada:"Aprovada",reservada:"Reservada",recompra:"Em recompra",bloqueada:"Bloqueada",livre:"Disponível",quitada:"Quitada"};
+  const face=n=>{const m=mk(n.id);return m&&typeof m.vcess==="number"?m.vcess:n.valor};
+  const g={};const tot={};let ab=0,fat=0;
+  for(const n of ns){const k=status(n),m=mk(n.id);fat+=n.valor;if(n.saldo>0)ab+=n.saldo;tot[k]=(tot[k]||0)+(k==="antecipada"||k==="cobranca"?face(n):n.saldo);
+    if(m&&m.fundo){const gk=m.fundo+"|"+(m.cessao||"")+"|"+k;const x=g[gk]||(g[gk]={fundo:m.fundo,cessao:m.cessao||"",k,n:0,v:0,s:0,ven:new Set()});x.n++;x.v+=face(n);x.s+=n.saldo;x.ven.add(n.ven.slice(0,4))}}
+  const rec=Object.entries(S.recompras).filter(([id,r])=>r.situacao!=="feita"&&ns.some(n=>n.id===id)).reduce((t,[,r])=>t+(r.valor||0),0);
+  const linhas=Object.values(g).sort((a,b)=>a.fundo.localeCompare(b.fundo)||String(a.cessao).localeCompare(String(b.cessao)));
+  const ord=["antecipada","cobranca","aprovada","analise","reservada","recompra","bloqueada","livre","quitada"];
+  return `<div class="panel" style="padding:14px;margin-top:12px"><span class="eyebrow">Resumo do cliente</span>
+    <dl class="kv" style="margin-top:8px"><dt>Notas na base</dt><dd class="num">${ns.length} · ${money(fat)}</dd><dt>Saldo em aberto</dt><dd class="num">${money(ab)}</dd>
+    ${ord.filter(k=>tot[k]>0.004).map(k=>`<dt>${lab[k]}</dt><dd class="num">${money(tot[k])}</dd>`).join("")}${rec?`<dt>Recompras pendentes</dt><dd class="num">${money(rec)}</dd>`:""}</dl>
+    ${linhas.length?`<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>Fundo</th><th>Cessão</th><th>Situação</th><th class="r">Notas</th><th class="r">Valor</th><th class="r">Saldo</th></tr></thead><tbody>
+      ${linhas.map(x=>`<tr><td><b>${esc(x.fundo)}</b></td><td class="num">${esc(x.cessao)||"–"}</td><td>${esc(lab[x.k]||x.k)} <span class="muted" style="font-size:11px">venc. ${[...x.ven].sort().join(", ")}</span></td><td class="r num">${x.n}</td><td class="r num">${money(x.v)}</td><td class="r num">${money(x.s)}</td></tr>`).join("")}
+      <tr><td colspan="3"><b>Total com fundos</b></td><td class="r num"><b>${linhas.reduce((t,x)=>t+x.n,0)}</b></td><td class="r num"><b>${money(linhas.reduce((t,x)=>t+x.v,0))}</b></td><td class="r num"><b>${money(linhas.reduce((t,x)=>t+x.s,0))}</b></td></tr>
+      </tbody></table></div>`:`<p class="muted" style="font-size:12px;margin:8px 0 0">Nenhuma nota deste cliente foi descontada.</p>`}</div>`;
+}
+async function renderDocsCliente(o){
+  const box=$("#docs-cli");if(!box)return;const key=digits(o.cpf)||o.cli;
+  const ns=(S.all||S.base).filter(n=>(digits(n.cpf)||n.cli)===key&&n.ven>=String(new Date().getFullYear()));
+  const dirs=[...new Set(ns.map(n=>"nota/"+nfKey(n)))];
+  box.innerHTML=`<span class="eyebrow">Documentos do cliente</span><div class="muted" style="font-size:12px;margin-top:6px">Procurando arquivos de ${dirs.length} notas…</div>`;
+  const out=[];for(let i=0;i<dirs.length;i+=6){const r=await Promise.all(dirs.slice(i,i+6).map(listDir));r.forEach(x=>out.push(...x))}
+  const bol=out.filter(f=>f.tipo==="Boleto"),nts=out.filter(f=>f.tipo!=="Boleto");
+  box.innerHTML=`<span class="eyebrow">Documentos do cliente</span>
+    ${out.length?`<div class="row" style="margin:8px 0;gap:6px">${bol.length?`<button class="btn sm pri" id="zb">Baixar boletos (${bol.length})</button>`:""}${nts.length?`<button class="btn sm" id="zn">Baixar notas (${nts.length})</button>`:""}<button class="btn sm" id="za">Baixar tudo (${out.length})</button></div>
+    <div class="list">${docRows(bol,false)}${docRows(nts,false)}</div>`:`<p class="muted" style="font-size:12px;margin:8px 0 0">Nenhum boleto ou nota anexado para este cliente.</p>`}`;
+  const nm=slug(o.nome);
+  box.onclick=e=>{const d=e.target.closest("[data-dl]");if(d)return baixar(d.dataset.dl,d.dataset.nm);
+    if(e.target.closest("#zb"))baixarZip(bol,`Boletos - ${nm}.zip`);if(e.target.closest("#zn"))baixarZip(nts,`Notas - ${nm}.zip`);if(e.target.closest("#za"))baixarZip(out,`Documentos - ${nm}.zip`)};
+}
+
+/* importar uma pasta inteira: identifica a nota/cessão pelo nome do arquivo */
+function painelDocsImport(){
+  if(!S.canWrite)return "";
+  return `<div class="panel" style="margin-top:16px"><h2>Documentos: boletos, notas e termos</h2>
+    <p class="muted" style="margin-top:0;font-size:13px">Escolha uma pasta (ex.: BOLETOS - TERMOS (SACADOS) ou NFS DESCONTOS). O site identifica cada arquivo pelo nome: <b>BOLETO NF 029040…</b> vira boleto da NF 29040, <b>000028555 - NOME.pdf/.xml</b> vira a nota, <b>TERMO DE CESSÃO 3197.pdf</b> vira o termo da cessão 3197. Arquivos repetidos são substituídos.</p>
+    <input type="file" id="docdir" webkitdirectory multiple>
+    <div id="doc-res" style="margin-top:10px"></div></div>`;
+}
+function ligarDocsImport(){
+  const inp=$("#docdir");if(!inp)return;
+  const FIL={"000161":"0101","000323":"0103","000404":"0104","000676":"0106","001214":"0112","001052":"0110"};
+  inp.onchange=async()=>{const files=[...inp.files].filter(f=>/\.(pdf|xml)$/i.test(f.name));const res=$("#doc-res");
+    res.innerHTML=`<p class="muted" style="margin:0">Lendo ${files.length} arquivos…</p>`;
+    const byNum={};for(const n of (S.all||S.base)){const k=parseInt(n.num,10);(byNum[k]=byNum[k]||[]).push(n)}
+    const ces=cessoes();const plano=[],fora=[],seen=new Set();
+    const norm=s=>slug(s).toUpperCase();
+    for(const f of files){const rel=f.webkitRelativePath||f.name,U=norm(rel),nm=f.name.toUpperCase();
+      if(/DOCUMENTA|_02 NOTAS_|NFS SARFATY|RESUMO/.test(U)){continue}
+      if(/TERMO/.test(nm)){const mm=/CESS[AÃ]O\s*([\w\/.-]+)/i.exec(f.name.replace(/\.pdf$/i,""));const num=mm?mm[1].trim():"";
+        let c=ces.filter(c=>String(c.cessao)===num);if(c.length>1){const c2=c.filter(x=>U.includes(norm(x.fundo)));if(c2.length)c=c2}
+        let path=null,info="";
+        if(c.length===1){path=termoDir(c[0].fundo,c[0].cessao)+"/"+slug(f.name);info=`Termo ${c[0].fundo} ${c[0].cessao}`}
+        else{const fu=[...new Set(ces.map(x=>x.fundo))].find(x=>U.includes(norm(x)));if(fu&&num){path=termoDir(fu,num)+"/"+slug(f.name);info=`Termo ${fu} ${num}`}}
+        if(path&&!seen.has(path)){seen.add(path);plano.push({f,path,info})}else if(!path)fora.push(rel);
+        continue}
+      const bol=/^BOLETO\s+NF\s*0*(\d+)/i.exec(f.name),nota=/^(?:NF\s*)?0*(\d{3,9})\s*-\s*/i.exec(f.name);
+      const m=bol||nota;if(!m){fora.push(rel);continue}
+      let c=byNum[parseInt(m[1],10)]||[];
+      if(new Set(c.map(n=>n.fil)).size>1&&/\.xml$/i.test(f.name)){try{const x=await f.text();const cn=(/<emit>\s*<CNPJ>(\d{14})/.exec(x)||[])[1];const fl=cn&&FIL[cn.slice(-6)];if(fl)c=c.filter(n=>n.fil===fl)}catch(e){}}
+      if(new Set(c.map(n=>n.fil)).size>1){const c2=c.filter(n=>{const toks=norm(n.nome).split(" ").filter(t=>t.length>3).slice(0,2);return toks.length&&toks.every(t=>U.includes(t))});if(c2.length)c=c2}
+      if(new Set(c.map(n=>n.fil)).size!==1){fora.push(rel);continue}
+      const n0=c[0],ext=f.name.split(".").pop().toLowerCase();
+      const fname=bol?slug(f.name):`NF ${String(parseInt(n0.num,10)).padStart(6,"0")} - ${slug(n0.nome)}.${ext}`;
+      const path="nota/"+nfKey(n0)+"/"+fname;if(seen.has(path))continue;seen.add(path);
+      plano.push({f,path,info:`NF ${parseInt(n0.num,10)} ${n0.nome}`})}
+    const nb=plano.filter(p=>/BOLETO/i.test(p.path)).length,nt=plano.filter(p=>/\/termo\//.test("/"+p.path)).length;
+    res.innerHTML=`<p style="margin:0 0 8px"><b>${plano.length}</b> arquivos identificados (${plano.length-nb-nt} de notas, ${nb} boletos, ${nt} termos)${fora.length?` · <b>${fora.length}</b> sem nota/cessão correspondente`:""}.</p>
+      ${plano.length?`<button class="btn pri" id="doc-go">Enviar ${plano.length} arquivos</button>`:""} <span class="muted" id="doc-st" style="font-size:12px"></span>
+      ${fora.length?`<details style="margin-top:8px"><summary class="muted" style="font-size:12px;cursor:pointer">Ver os não identificados</summary><div style="font-size:12px;max-height:200px;overflow:auto">${fora.slice(0,300).map(x=>esc(x)).join("<br>")}</div></details>`:""}`;
+    const go=$("#doc-go");if(go)go.onclick=async()=>{go.disabled=true;const st=$("#doc-st");let ok=0,er=0,i=0;const erros=[];
+      const worker=async()=>{while(i<plano.length){const p=plano[i++];const {error}=await SB.storage.from(BUCKET).upload(p.path,p.f,{upsert:true,contentType:/\.xml$/i.test(p.f.name)?"text/xml":"application/pdf"});if(error){er++;erros.push(p.f.name+": "+error.message)}else ok++;st.textContent=`${ok+er} de ${plano.length}…`}};
+      await Promise.all([worker(),worker(),worker(),worker()]);
+      st.textContent="";toast(`${ok} arquivos enviados`+(er?` · ${er} com erro`:""));res.insertAdjacentHTML("beforeend",`<p style="margin:8px 0 0" class="${er?"":"muted"}">Pronto: ${ok} enviados${er?`, ${er} com erro`:""}.</p>${er?`<div style="font-size:12px;max-height:160px;overflow:auto">${erros.slice(0,50).map(esc).join("<br>")}</div>`:""}`)};
+  };
 }
 
 /* ---------- clientes ---------- */
@@ -785,7 +905,7 @@ function renderClientes(){
 }
 function openCliente(o){
   const key=digits(o.cpf)||o.cli;const c=S.clientes[key]||{};const cb=S.bloq["c_"+o.cli];const ro=!S.canWrite?"disabled":"";
-  $("#overlay").innerHTML=`<div class="scrim" id="scrim"></div><aside class="drawer" role="dialog" aria-label="${esc(o.nome)}">
+  $("#overlay").innerHTML=`<div class="scrim" id="scrim"></div><aside class="drawer" style="width:min(760px,100%)" role="dialog" aria-label="${esc(o.nome)}">
     <div class="row" style="justify-content:space-between"><span class="eyebrow">Cliente ${esc(o.cli)}</span><button class="btn sm" id="dx">Fechar</button></div>
     <h2 style="margin-top:8px">${esc(o.nome)}</h2><div class="muted num">${fmtDoc(o.cpf)}</div>
     <dl class="kv"><dt>Livre</dt><dd class="num">${money(o.livre)}</dd><dt>Nos fundos</dt><dd class="num">${money(o.fundo)}</dd><dt>Bloqueado</dt><dd class="num">${money(o.blq)}</dd>
@@ -799,6 +919,7 @@ function openCliente(o){
     ${S.canWrite?`<div class="panel" style="padding:14px;margin-top:12px"><span class="eyebrow">Bloqueio do cliente</span>
       ${cb?`<p style="margin:8px 0">Bloqueado${cb.motivo?": "+esc(cb.motivo):""}. Nenhuma nota dele entra como livre.</p><button class="btn" id="c-unb">Desbloquear cliente</button>`
       :`<div class="row" style="margin-top:8px"><input type="text" id="c-bm" placeholder="Motivo (opcional)" style="flex:1"><button class="btn danger" id="c-bl">Bloquear cliente</button></div>`}</div>`:""}
+    ${resumoCliente(o)}<div class="panel" id="docs-cli" style="padding:14px;margin-top:12px"></div>
     <div style="margin-top:12px"><button class="btn" id="c-notas">Ver notas deste cliente</button></div>
   </aside>`;
   const close=()=>{$("#overlay").innerHTML=""};$("#dx").onclick=close;$("#scrim").onclick=close;
@@ -807,6 +928,7 @@ function openCliente(o){
   const bl=$("#c-bl");if(bl)bl.onclick=async()=>{try{await S.db.collection("bloqueios").doc("c_"+o.cli).set({tipo:"cliente",codigo:o.cli,nome:o.nome,motivo:($("#c-bm").value.trim()||"CLIENTE BLOQUEADO").toUpperCase()});toast("Cliente bloqueado");close()}catch(e){toast(dbErr(e))}};
   const ub=$("#c-unb");if(ub)ub.onclick=async()=>{try{await S.db.collection("bloqueios").doc("c_"+o.cli).delete();toast("Cliente desbloqueado");close()}catch(e){toast(dbErr(e))}};
   $("#c-notas").onclick=()=>{close();S.q=digits(o.cpf)||o.nome;S.stF=new Set();S.fundoF="";S.pend=null;go("notas")};
+  renderDocsCliente(o);
 }
 
 /* ---------- bloqueios ---------- */
@@ -849,7 +971,7 @@ function renderImportar(){
    <div class="panel"><h2>Base atual</h2>${m?`<dl class="kv"><dt>Data da base</dt><dd class="num">${dBR(m.dataBase)}</dd><dt>Arquivo</dt><dd>${esc(m.arquivo||"")}</dd><dt>Notas</dt><dd class="num">${(m.total||0).toLocaleString("pt-BR")}</dd><dt>Atualizada em</dt><dd>${new Date(m.importadoEm).toLocaleString("pt-BR")}</dd></dl>`:`<p class="muted">Nenhuma base carregada.</p>`}
    ${S.fat?`<p style="font-size:13px;margin:0 0 8px"><b>Faturado:</b> <span class="num">${money(S.fat.total)}</span> · ${S.fat.n} notas da consulta ${esc(S.fat.arquivo||"")} (${new Date(S.fat.em).toLocaleDateString("pt-BR")})</p>`:""}
    <p class="muted" style="font-size:12px">O site guarda as notas fiscais (tipo NF) da base que vencem a partir deste ano, as que ainda têm saldo e as que têm fundo marcado. Notas que somem da base nova continuam com o fundo guardado e voltam a aparecer se reaparecerem.</p></div></div>`;
-  $("#main").innerHTML=h;$("#main").onclick=null;
+  $("#main").innerHTML=h+painelDocsImport();$("#main").onclick=null;ligarDocsImport();
   const f=$("#file");if(!f)return;
   f.onchange=()=>f.files[0]&&readFile(f.files[0]);
   const d=$("#drop");d.ondragover=e=>{e.preventDefault();d.classList.add("over")};d.ondragleave=()=>d.classList.remove("over");
@@ -1002,6 +1124,7 @@ async function boot(){
   const user=await window.AUTH_READY;
   const db=window.AppDB;
   S.db=db;S.user=user;S.uid=user?user.id:"";
+  try{const r=await SB.from("editores").select("user_id").eq("user_id",S.uid);if(!r.error&&!(r.data&&r.data.length))S.canWrite=false}catch(e){}
   const onErr=e=>{if(e&&e.code==="revoked"){S.db=null;render()}};
   db.doc("config/meta").onSnapshot(s=>{const m=s.exists?s.data():null;const id=m?m.importId:null;S.meta=m;
     if(id!==S.metaId){S.metaId=id;loadChunks(m)}else render()},onErr);
