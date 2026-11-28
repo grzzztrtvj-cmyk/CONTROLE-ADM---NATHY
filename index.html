@@ -213,8 +213,10 @@ header{border-top:3px solid var(--brand-orange)}
     </div>
     <nav role="tablist" id="tabs">
       <button role="tab" data-tab="painel" aria-selected="true">Painel</button>
+      <button role="tab" data-tab="pendencias" aria-selected="false">Pendências</button>
       <button role="tab" data-tab="notas" aria-selected="false">Notas</button>
       <button role="tab" data-tab="clientes" aria-selected="false">Clientes</button>
+      <button role="tab" data-tab="agenda" aria-selected="false">Agenda</button>
       <button role="tab" data-tab="bloqueios" aria-selected="false">Bloqueios</button>
       <button role="tab" data-tab="importar" aria-selected="false">Atualizar base</button>
     </nav>
@@ -359,8 +361,9 @@ function prevYearRows(){
 function cessoes(){
   const g={};
   for(const id of Object.keys({...S.seedM,...S.marcas})){const m=mk(id);if(!m||m.etapa!=="cedida")continue;const n=S.byId.get(id);
-    const key=m.fundo+"|"+(m.cessao||"");const o=g[key]||(g[key]={key,fundo:m.fundo,cessao:m.cessao||"",bruto:0,n:0});o.bruto+=(typeof m.vcess==="number"?m.vcess:(n?n.valor:0));o.n++}
-  Object.entries(S.cessoes).forEach(([k,v])=>{const o=g[k];if(o)o.liquido=v.liquido;});
+    const key=m.fundo+"|"+(m.cessao||"");const o=g[key]||(g[key]={key,fundo:m.fundo,cessao:m.cessao||"",bruto:0,n:0,fv:0});const fv=(typeof m.vcess==="number"?m.vcess:(n?n.valor:0));o.bruto+=fv;o.n++;if(n)o.fv+=fv*Date.parse(n.ven)}
+  Object.entries(S.cessoes).forEach(([k,v])=>{const o=g[k];if(o){o.liquido=v.liquido;o.data=v.data||""}});
+  Object.values(g).forEach(o=>{if(!o.data){const x=/^(20\d{2})(\d{2})(\d{2})/.exec(o.cessao);if(x&&+x[2]>=1&&+x[2]<=12&&+x[3]>=1&&+x[3]<=31){o.data=`${x[1]}-${x[2]}-${x[3]}`;o.dataPeloNum=true}}});
   return Object.values(g).sort((a,b)=>a.fundo.localeCompare(b.fundo)||String(a.cessao).localeCompare(String(b.cessao)));
 }
 function descontadas(){
@@ -500,18 +503,21 @@ function renderPainel(){
     <tr><td colspan="3"><b>Pendente</b></td><td class="r num"><b>${money(recV)}</b></td><td colspan="${S.canWrite?3:2}"></td></tr></tbody></table></div></div>`;}
   // termos de cessão
   h+=`<div class="panel" style="margin-bottom:16px"><h2>Termos de cessão</h2>
-    ${ces.length?`<div class="tbl-wrap"><table><thead><tr><th>Fundo</th><th>Cessão</th><th class="r">Notas</th><th class="r">Valor bruto</th><th class="r">Líquido recebido</th><th class="r">Custo</th><th class="r">%</th></tr></thead><tbody>
+    ${ces.length?`<div class="tbl-wrap"><table><thead><tr><th>Fundo</th><th>Cessão</th><th class="r">Notas</th><th class="r">Valor bruto</th><th class="r">Líquido recebido</th><th class="r">Custo</th><th class="r">%</th><th>Data da cessão</th><th class="r">Prazo médio</th><th class="r">Taxa ao mês</th></tr></thead><tbody>
     ${ces.map(c=>`<tr><td><b>${esc(c.fundo)}</b></td><td class="num">${esc(c.cessao)||"<span class='muted'>sem nº</span>"}</td><td class="r num">${c.n}</td><td class="r num">${money(c.bruto)}</td>
       <td class="r">${S.canWrite?`<input type="text" inputmode="decimal" class="num" data-liq="${esc(c.key)}" value="${c.liquido?c.liquido.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}):""}" placeholder="informar" style="width:140px;text-align:right" aria-label="Líquido recebido da cessão ${esc(c.cessao)}">`:`<span class="num">${c.liquido?money(c.liquido):"–"}</span>`}</td>
-      <td class="r num">${c.liquido?money(c.bruto-c.liquido):"–"}</td><td class="r num">${c.liquido?((c.bruto-c.liquido)/c.bruto*100).toLocaleString("pt-BR",{maximumFractionDigits:1})+"%":"–"}</td></tr>`).join("")}
-    <tr><td colspan="3"><b>Total</b></td><td class="r num"><b>${money(ces.reduce((s,c)=>s+c.bruto,0))}</b></td><td class="r num"><b>${money(liq)}</b></td><td class="r num"><b>${money(custo)}</b></td><td class="r num"><b>${bruto?(custo/bruto*100).toLocaleString("pt-BR",{maximumFractionDigits:1})+"%":""}</b></td></tr>
+      <td class="r num">${c.liquido?money(c.bruto-c.liquido):"–"}</td><td class="r num">${c.liquido?((c.bruto-c.liquido)/c.bruto*100).toLocaleString("pt-BR",{maximumFractionDigits:1})+"%":"–"}</td>
+      <td>${S.canWrite?`<input type="date" data-cesdt="${esc(c.key)}" value="${esc(c.data||"")}" aria-label="Data da cessão ${esc(c.cessao)}" style="width:140px">${c.dataPeloNum?`<div class="muted" style="font-size:10px">pelo nº da cessão</div>`:""}`:`<span class="num">${c.data?dBR(c.data):"–"}</span>`}</td>
+      ${(()=>{const x=custoCes(c);return x?`<td class="r num">${Math.round(x.prazo)} dias</td><td class="r num">${pct(x.am)}</td>`:`<td class="r muted">–</td><td class="r muted">–</td>`})()}</tr>`).join("")}
+    <tr><td colspan="3"><b>Total</b></td><td class="r num"><b>${money(ces.reduce((s,c)=>s+c.bruto,0))}</b></td><td class="r num"><b>${money(liq)}</b></td><td class="r num"><b>${money(custo)}</b></td><td class="r num"><b>${bruto?(custo/bruto*100).toLocaleString("pt-BR",{maximumFractionDigits:1})+"%":""}</b></td><td colspan="3"></td></tr>
     </tbody></table></div>`:`<div class="empty">Nenhuma nota cedida ainda.</div>`}</div>`;
+  h+=painelCusto(ces);
   const sc={};rows.filter(r=>r.k==="livre").forEach(r=>{const k=r.n.cli;const o=sc[k]||(sc[k]={nome:r.n.nome,v:0,n:0,na:naoAutorizado(r.n)});o.v+=r.a;o.n++});
   const top=Object.values(sc).sort((a,b)=>b.v-a.v).slice(0,10);
   const semArq=rows.filter(r=>(r.k==="antecipada"||r.k==="analise"||r.k==="aprovada"||r.k==="livre")&&arq(r.n)!=="PX");
   const blqComFundo=rows.filter(r=>marked(r.k)&&bloqueio(r.n));
   h+=`<div class="grid2"><div class="panel"><h2>Maiores sacados disponíveis</h2>${top.length?`<div class="list">${top.map(o=>`<div class="it"><span class="nome" style="max-width:none">${esc(o.nome)} ${o.na?`<span class="tag">${esc(o.na)}</span>`:""}</span><span class="num">${short(o.v)} <span class="muted">· ${o.n}</span></span></div>`).join("")}</div>`:`<div class="empty">Nada disponível no recorte.</div>`}</div>
-   <div class="panel"><h2>Pendências</h2><div class="list">
+   <div class="panel"><h2 style="justify-content:space-between">Pendências <button class="btn sm" data-gopend>Ver todas</button></h2><div class="list">
     <div class="it"><span>Notas sem PDF e XML baixados</span><button class="btn sm" data-pend="arq">${semArq.length} notas</button></div>
     <div class="it"><span>Disponíveis de clientes não autorizados</span><button class="btn sm" data-pend="na">${livreNA.length} notas</button></div>
     <div class="it"><span>Cedidas, mas de cliente ou nota bloqueada</span><button class="btn sm" data-pend="blq">${blqComFundo.length} notas</button></div>
@@ -519,6 +525,7 @@ function renderPainel(){
    </div></div></div>`;
   $("#main").innerHTML=h;
   $("#main").onclick=e=>{
+    if(e.target.closest("[data-gopend]")){go("pendencias");return}
     const k=e.target.closest("[data-go]");if(k){S.fundoF="";S.q="";S.pend=null;go("notas",{st:k.dataset.go});return}
     const f=e.target.closest("[data-fundo]");if(f){S.fundoF=f.dataset.fundo;S.stF=new Set();S.q="";S.pend=null;go("notas");return}
     const ok=e.target.closest("[data-recok]");if(ok){const id=ok.dataset.recok;const dt=($(`[data-recdt="${id}"]`)||{}).value||new Date().toISOString().slice(0,10);
@@ -528,10 +535,14 @@ function renderPainel(){
     const pk=e.target.closest("[data-pendk]");if(pk){S.fundoF="";S.q="";S.pend=pk.dataset.pendk;S.stF=new Set();go("notas");return}
     const p=e.target.closest("[data-pend]");if(p){S.fundoF="";S.q="";S.pend=p.dataset.pend;S.stF=new Set();go("notas")}
   };
-  $("#main").onchange=async e=>{const i=e.target.closest("[data-liq]");if(!i)return;
+  $("#main").onchange=async e=>{const dt=e.target.closest("[data-cesdt]");if(dt){const key=dt.dataset.cesdt,[fundo,...rest]=key.split("|");
+      try{await S.db.doc("config/cessoes").update({m:{[key]:{fundo,cessao:rest.join("|"),data:dt.value}}})}
+      catch(er){try{await S.db.doc("config/cessoes").set({m:{...S.cessoes,[key]:{...(S.cessoes[key]||{}),fundo,cessao:rest.join("|"),data:dt.value}}})}catch(e2){toast(dbErr(e2));return}}
+      toast("Data da cessão salva");return}
+    const i=e.target.closest("[data-liq]");if(!i)return;
     const key=i.dataset.liq,[fundo,...rest]=key.split("|"),v=parseBR(i.value);
     try{await S.db.doc("config/cessoes").update({m:{[key]:{fundo,cessao:rest.join("|"),liquido:isNaN(v)?0:v}}})}
-    catch(er){try{await S.db.doc("config/cessoes").set({m:{...S.cessoes,[key]:{fundo,cessao:rest.join("|"),liquido:isNaN(v)?0:v}}})}catch(e2){toast(dbErr(e2));return}}
+    catch(er){try{await S.db.doc("config/cessoes").set({m:{...S.cessoes,[key]:{...(S.cessoes[key]||{}),fundo,cessao:rest.join("|"),liquido:isNaN(v)?0:v}}})}catch(e2){toast(dbErr(e2));return}}
     toast("Líquido da cessão salvo")};
 }
 function emptyBase(){
@@ -553,6 +564,7 @@ function notaRows(){
   if(S.pend==="na")rows=rows.filter(r=>r.k==="livre"&&naoAutorizado(r.n));
   if(S.pend==="blq")rows=rows.filter(r=>marked(r.k)&&bloqueio(r.n));
   if(S.pend==="an")rows=rows.filter(r=>r.k==="analise");
+  if(S.pend==="lista"&&S.pendIds)rows=S.base.filter(n=>S.pendIds.has(n.id)).map(n=>{const k=status(n);return {n,k,a:amount(n,k)}});
   if(S.pend==="desc")rows=descontadas().map(n=>{const k=status(n);return {n,k,a:amount(n,k)}});
   if(S.pend==="rec")rows=S.base.filter(n=>S.recompras[n.id]&&S.recompras[n.id].situacao!=="feita").map(n=>({n,k:"recompra",a:S.recompras[n.id].valor||0}));
   if(S.pend==="fat"&&S.fat){const set=fatInfo().all;rows=S.base.filter(n=>set.has(n.id)).map(n=>{const k=status(n);return {n,k,a:amount(n,k)}})}
@@ -586,7 +598,7 @@ function renderNotas(){
     ${S.canWrite?`<span class="row" style="gap:6px"><input type="text" inputmode="decimal" id="alvo" placeholder="Valor do lote, ex. 2.000.000" style="width:190px"><button class="btn" id="bAlvo" title="Seleciona notas livres, das que vencem antes, até chegar no valor">Montar lote</button></span>`:""}
   </div>
   <div class="toolbar"><div class="chips">${Object.keys(ST).map(s=>`<button class="chip" style="--c:${ST[s].c}" data-st="${s}" aria-pressed="${S.stF.has(s)}">${ST[s].l} <span class="n">${counts[s]||0}</span></button>`).join("")}
-  ${S.pend?`<button class="chip" aria-pressed="true" data-clrpend>${esc(S.pend==="dy"&&S.pendY?`Descontadas – venc. ${S.pendY.split("|")[0]}`:PEND[S.pend])} ✕</button>`:""}</div>
+  ${S.pend?`<button class="chip" aria-pressed="true" data-clrpend>${esc(S.pend==="dy"&&S.pendY?`Descontadas – venc. ${S.pendY.split("|")[0]}`:S.pend==="lista"?(S.pendLabel||"Lista"):PEND[S.pend])} ✕</button>`:""}</div>
   <span class="muted" style="margin-left:auto;font-size:13px">${rows.length} notas · <span class="num">${money(tot)}</span></span></div>`;
   const py=S.f.de?+S.f.de.slice(0,4)-1:null;
   if(py&&rows.some(r=>r.n.ven.slice(0,4)===String(py)))h+=`<p class="muted" style="font-size:12px;margin:-4px 0 10px">De ${py} aparecem só as notas já descontadas (cedidas aos fundos ou em cobrança simples).</p>`;
@@ -651,12 +663,14 @@ function renderBulk(){
       <button class="btn pri" id="bk-ap">Marcar</button>
       <button class="btn" id="bk-clr">Limpar fundo</button>
       <button class="btn" id="bk-cp">Copiar lista</button>
+      <button class="btn" id="bk-env" title="Baixa um .zip com a planilha das notas e os XMLs e PDFs para mandar ao fundo">Gerar envio p/ fundo</button>
       <button class="btn" id="bk-arq">Marcar PDF e XML baixados</button>
       <button class="btn" id="bk-x">Desmarcar</button></div>`;
     $("#bk-ap").onclick=async()=>{const f=$("#bk-f").value.trim(),et=$("#bk-et").value,c=$("#bk-c").value.trim();
       if(!f)return toast("Informe o fundo");await saveMarcas([...S.sel],{fundo:f,etapa:et,cessao:c});ensureFundo(f);S.sel.clear();render()};
     $("#bk-clr").onclick=async()=>{await clearMarcas([...S.sel]);S.sel.clear();render()};
     $("#bk-cp").onclick=()=>copyList([...S.sel]);
+    $("#bk-env").onclick=async()=>{const b=$("#bk-env");b.disabled=true;try{await gerarEnvio([...S.sel],$("#bk-f").value.trim())}catch(e){toast("Não deu para montar o envio.")}b.disabled=false};
     $("#bk-arq").onclick=async()=>{const m={};[...S.sel].forEach(id=>{const n=S.byId.get(id);if(n)m[n.fil+"_"+parseInt(n.num,10)]="PX"});
       try{await S.db.doc("config/arquivos").update({m})}catch(e){try{await S.db.doc("config/arquivos").set({m:{...S.arquivos,...m}})}catch(e2){return toast(dbErr(e2))}}
       toast(`${Object.keys(m).length} notas marcadas com PDF e XML`);S.sel.clear();render()};
@@ -793,11 +807,11 @@ async function renderDocsNota(n,m){
       ${tdir?`<label>Anexar termo de cessão ${esc(m.fundo)} ${esc(m.cessao)}<input type="file" id="up-t" accept=".pdf"></label>`:""}<span class="muted" style="font-size:11px" id="up-st"></span></div>`:""}`;
   box.onclick=async e=>{const d=e.target.closest("[data-dl]");if(d)return baixar(d.dataset.dl,d.dataset.nm);
     const r=e.target.closest("[data-rm]");if(r){if(r.dataset.c!=="1"){r.dataset.c="1";r.textContent="Confirmar";return}
-      const {error}=await SB.storage.from(BUCKET).remove([r.dataset.rm]);toast(error?"Não deu para apagar.":"Arquivo apagado");renderDocsNota(n,m);return}
+      const {error}=await SB.storage.from(BUCKET).remove([r.dataset.rm]);toast(error?"Não deu para apagar.":"Arquivo apagado");if(!error)logArq("apagado",r.dataset.rm);carregarDix();renderDocsNota(n,m);return}
     if(e.target.closest("#dz"))baixarZip(all.map(f=>({...f})),`NF ${parseInt(n.num,10)} - ${slug(n.nome)}.zip`)};
   const up=async(inp,base)=>{const st=$("#up-st");let ok=0;for(const f of inp.files){st.textContent=`Enviando ${f.name}…`;
       const {error}=await SB.storage.from(BUCKET).upload(base+"/"+slug(f.name),f,{upsert:true,contentType:f.type||undefined});if(!error)ok++}
-    toast(ok+" arquivo(s) anexado(s)");renderDocsNota(n,m)};
+    toast(ok+" arquivo(s) anexado(s)");if(ok)logArq("enviado",`${ok} arquivo(s) na NF ${parseInt(n.num,10)} ${n.nome}`);carregarDix();renderDocsNota(n,m)};
   const un=$("#up-n");if(un)un.onchange=()=>up(un,dir);const ut=$("#up-t");if(ut)ut.onchange=()=>up(ut,tdir);
 }
 
@@ -850,7 +864,16 @@ function ligarDocsImport(){
     const byNum={};for(const n of (S.all||S.base)){const k=parseInt(n.num,10);(byNum[k]=byNum[k]||[]).push(n)}
     const ces=cessoes();const plano=[],fora=[],seen=new Set();
     const norm=s=>slug(s).toUpperCase();
+    const cpfs=new Set((S.all||S.base).map(n=>digits(n.cpf)).filter(Boolean));
+    const cliNomes=new Map();(S.all||S.base).forEach(n=>{const d=digits(n.cpf);if(d&&!cliNomes.has(d))cliNomes.set(d,norm(n.nome).split(" ").filter(t=>t.length>3&&!["LTDA","AGRICOLA","COMERCIO","PRODUTOS"].includes(t)).slice(0,2))});
     for(const f of files){const rel=f.webkitRelativePath||f.name,U=norm(rel),nm=f.name.toUpperCase();
+      if(/DOCUMENTA/.test(U)&&/\.pdf$/i.test(f.name)){
+        const cand=[...f.name.matchAll(/\d{2,3}[.\s]?\d{3}[.\s]?\d{3}[\/.\s-]?\d{2,4}[-.\s]?\d{0,2}/g)].map(x=>digits(x[0])).filter(d=>d.length===11||d.length===14);
+        let cpf=cand.find(d=>cpfs.has(d));
+        if(!cpf){const FN=norm(f.name);const hit=[...cliNomes].filter(([d,toks])=>toks.length>=2&&toks.every(t=>FN.includes(t)));if(hit.length===1)cpf=hit[0][0]}
+        if(!cpf){fora.push(rel);continue}
+        const path="cliente/"+cpf+"/"+slug(f.name);if(seen.has(path))continue;seen.add(path);
+        plano.push({f,path,info:"Documento do cliente",cli:true,val:chutaValidade(f.name)});continue}
       if(/DOCUMENTA|_02 NOTAS_|NFS SARFATY|RESUMO/.test(U)){continue}
       if(/TERMO/.test(nm)){const mm=/CESS[AÃ]O\s*([\w\/.-]+)/i.exec(f.name.replace(/\.pdf$/i,""));const num=mm?mm[1].trim():"";
         let c=ces.filter(c=>String(c.cessao)===num);if(c.length>1){const c2=c.filter(x=>U.includes(norm(x.fundo)));if(c2.length)c=c2}
@@ -869,13 +892,15 @@ function ligarDocsImport(){
       const fname=bol?slug(f.name):`NF ${String(parseInt(n0.num,10)).padStart(6,"0")} - ${slug(n0.nome)}.${ext}`;
       const path="nota/"+nfKey(n0)+"/"+fname;if(seen.has(path))continue;seen.add(path);
       plano.push({f,path,info:`NF ${parseInt(n0.num,10)} ${n0.nome}`})}
-    const nb=plano.filter(p=>/BOLETO/i.test(p.path)).length,nt=plano.filter(p=>/\/termo\//.test("/"+p.path)).length;
-    res.innerHTML=`<p style="margin:0 0 8px"><b>${plano.length}</b> arquivos identificados (${plano.length-nb-nt} de notas, ${nb} boletos, ${nt} termos)${fora.length?` · <b>${fora.length}</b> sem nota/cessão correspondente`:""}.</p>
+    const nb=plano.filter(p=>/BOLETO/i.test(p.path)).length,nt=plano.filter(p=>/\/termo\//.test("/"+p.path)).length,nc=plano.filter(p=>p.cli).length;
+    res.innerHTML=`<p style="margin:0 0 8px"><b>${plano.length}</b> arquivos identificados (${plano.length-nb-nt-nc} de notas, ${nb} boletos, ${nt} termos${nc?`, ${nc} documentos de clientes`:""})${fora.length?` · <b>${fora.length}</b> sem nota/cessão correspondente`:""}.</p>
       ${plano.length?`<button class="btn pri" id="doc-go">Enviar ${plano.length} arquivos</button>`:""} <span class="muted" id="doc-st" style="font-size:12px"></span>
       ${fora.length?`<details style="margin-top:8px"><summary class="muted" style="font-size:12px;cursor:pointer">Ver os não identificados</summary><div style="font-size:12px;max-height:200px;overflow:auto">${fora.slice(0,300).map(x=>esc(x)).join("<br>")}</div></details>`:""}`;
     const go=$("#doc-go");if(go)go.onclick=async()=>{go.disabled=true;const st=$("#doc-st");let ok=0,er=0,i=0;const erros=[];
       const worker=async()=>{while(i<plano.length){const p=plano[i++];const {error}=await SB.storage.from(BUCKET).upload(p.path,p.f,{upsert:true,contentType:/\.xml$/i.test(p.f.name)?"text/xml":"application/pdf"});if(error){er++;erros.push(p.f.name+": "+error.message)}else ok++;st.textContent=`${ok+er} de ${plano.length}…`}};
       await Promise.all([worker(),worker(),worker(),worker()]);
+      const vals={};plano.filter(p=>p.cli&&p.val).forEach(p=>vals[p.path]={validade:p.val});if(Object.keys(vals).length)await salvaValidade(vals);
+      if(ok)logArq("enviado",`${ok} arquivos pela importação de pasta`);carregarDix();
       st.textContent="";toast(`${ok} arquivos enviados`+(er?` · ${er} com erro`:""));res.insertAdjacentHTML("beforeend",`<p style="margin:8px 0 0" class="${er?"":"muted"}">Pronto: ${ok} enviados${er?`, ${er} com erro`:""}.</p>${er?`<div style="font-size:12px;max-height:160px;overflow:auto">${erros.slice(0,50).map(esc).join("<br>")}</div>`:""}`)};
   };
 }
@@ -896,7 +921,7 @@ function renderClientes(){
     h+=`<tr class="click" data-cli="${esc(o.key)}"><td><div class="nome" title="${esc(o.nome)}">${esc(o.nome)}</div>${cb?`<span class="tag bad">cliente bloqueado${cb.motivo&&cb.motivo!=="CLIENTE BLOQUEADO"?" · "+esc(cb.motivo):""}</span>`:""}</td>
     <td class="num" style="white-space:nowrap">${fmtDoc(o.cpf)}</td><td>${esc(c.rtv||"")}</td>
     <td>${aut?(/^autoriz/i.test(aut)?`<span class="tag ok">${esc(aut)}</span>`:`<span class="tag">${esc(aut)}</span>`):`<span class="muted" style="font-size:12px">sem cadastro</span>`}</td>
-    <td>${c.doc?esc(c.doc)+(c.ano?` <span class="muted">${esc(c.ano)}</span>`:""):`<span class="muted" style="font-size:12px">–</span>`}</td>
+    <td>${S.dix&&digits(o.cpf)?docChip(docStatus(digits(o.cpf)))+" ":""}${c.doc?esc(c.doc)+(c.ano?` <span class="muted">${esc(c.ano)}</span>`:""):""}</td>
     <td class="r num">${o.livre?short(o.livre):"–"}</td><td class="r num">${o.fundo?short(o.fundo):"–"}</td><td class="r num">${o.blq?short(o.blq):"–"}</td><td class="r num">${o.n}</td></tr>`}
   h+=`</tbody></table></div>`;
   $("#main").innerHTML=h;
@@ -919,7 +944,7 @@ function openCliente(o){
     ${S.canWrite?`<div class="panel" style="padding:14px;margin-top:12px"><span class="eyebrow">Bloqueio do cliente</span>
       ${cb?`<p style="margin:8px 0">Bloqueado${cb.motivo?": "+esc(cb.motivo):""}. Nenhuma nota dele entra como livre.</p><button class="btn" id="c-unb">Desbloquear cliente</button>`
       :`<div class="row" style="margin-top:8px"><input type="text" id="c-bm" placeholder="Motivo (opcional)" style="flex:1"><button class="btn danger" id="c-bl">Bloquear cliente</button></div>`}</div>`:""}
-    ${resumoCliente(o)}<div class="panel" id="docs-cli" style="padding:14px;margin-top:12px"></div>
+    ${resumoCliente(o)}<div class="panel" id="docs-cad" style="padding:14px;margin-top:12px"></div><div class="panel" id="docs-cli" style="padding:14px;margin-top:12px"></div>
     <div style="margin-top:12px"><button class="btn" id="c-notas">Ver notas deste cliente</button></div>
   </aside>`;
   const close=()=>{$("#overlay").innerHTML=""};$("#dx").onclick=close;$("#scrim").onclick=close;
@@ -928,7 +953,7 @@ function openCliente(o){
   const bl=$("#c-bl");if(bl)bl.onclick=async()=>{try{await S.db.collection("bloqueios").doc("c_"+o.cli).set({tipo:"cliente",codigo:o.cli,nome:o.nome,motivo:($("#c-bm").value.trim()||"CLIENTE BLOQUEADO").toUpperCase()});toast("Cliente bloqueado");close()}catch(e){toast(dbErr(e))}};
   const ub=$("#c-unb");if(ub)ub.onclick=async()=>{try{await S.db.collection("bloqueios").doc("c_"+o.cli).delete();toast("Cliente desbloqueado");close()}catch(e){toast(dbErr(e))}};
   $("#c-notas").onclick=()=>{close();S.q=digits(o.cpf)||o.nome;S.stF=new Set();S.fundoF="";S.pend=null;go("notas")};
-  renderDocsCliente(o);
+  renderDocsCliente(o);renderDocsCad(o);
 }
 
 /* ---------- bloqueios ---------- */
@@ -971,7 +996,7 @@ function renderImportar(){
    <div class="panel"><h2>Base atual</h2>${m?`<dl class="kv"><dt>Data da base</dt><dd class="num">${dBR(m.dataBase)}</dd><dt>Arquivo</dt><dd>${esc(m.arquivo||"")}</dd><dt>Notas</dt><dd class="num">${(m.total||0).toLocaleString("pt-BR")}</dd><dt>Atualizada em</dt><dd>${new Date(m.importadoEm).toLocaleString("pt-BR")}</dd></dl>`:`<p class="muted">Nenhuma base carregada.</p>`}
    ${S.fat?`<p style="font-size:13px;margin:0 0 8px"><b>Faturado:</b> <span class="num">${money(S.fat.total)}</span> · ${S.fat.n} notas da consulta ${esc(S.fat.arquivo||"")} (${new Date(S.fat.em).toLocaleDateString("pt-BR")})</p>`:""}
    <p class="muted" style="font-size:12px">O site guarda as notas fiscais (tipo NF) da base que vencem a partir deste ano, as que ainda têm saldo e as que têm fundo marcado. Notas que somem da base nova continuam com o fundo guardado e voltam a aparecer se reaparecerem.</p></div></div>`;
-  $("#main").innerHTML=h+painelDocsImport();$("#main").onclick=null;ligarDocsImport();
+  $("#main").innerHTML=h+painelDocsImport()+`<div id="hist-box"></div>`;$("#main").onclick=null;ligarDocsImport();renderHistBackup();
   const f=$("#file");if(!f)return;
   f.onchange=()=>f.files[0]&&readFile(f.files[0]);
   const d=$("#drop");d.ondragover=e=>{e.preventDefault();d.classList.add("over")};d.ondragleave=()=>d.classList.remove("over");
@@ -1093,12 +1118,213 @@ function datalists(){
   <datalist id="dl-doc"><option value="IRPF"><option value="IRPF + recibo"><option value="SEM IR"><option value="BALANÇO"><option value="SEM BALANÇO"><option value="BALANÇO / DRE"></datalist>
   <datalist id="dl-cli">${cl.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
 }
+/* ---------- índice de documentos (o que está anexado em cada nota/cliente) ---------- */
+const hoje=()=>new Date().toISOString().slice(0,10);
+S.dix=null;S.docval={};S.pendOpen=new Set();
+async function carregarDix(){if(!window.SB)return;try{const {data,error}=await SB.rpc("docs_index");if(error)throw error;
+  const m=new Map();(data||[]).forEach(r=>m.set(r.pasta,r));S.dix=m;render()}catch(e){S.dix=S.dix||new Map()}}
+const dixNota=n=>S.dix?S.dix.get("nota/"+nfKey(n)):null;
+function boletosNota(n){const d=dixNota(n);if(!d||!d.boletos)return[];const p=parseInt(n.par,10);
+  return d.boletos.map(b=>{const x=/BOLETO NF\s*0*(\d+)(?:-(\d+))?\s*-\s*VENC (\d\d)-(\d\d)-(\d{4})/i.exec(b);return x?{par:x[2]?parseInt(x[2],10):null,ven:`${x[5]}-${x[4]}-${x[3]}`}:null})
+    .filter(b=>b&&(b.par==null||!p||b.par===p))}
+async function logArq(acao,qual){try{if(S.canWrite)await SB.from("historico").insert({col:"arquivo",doc_id:String(qual).slice(0,300),acao,email:(S.user&&S.user.email)||""})}catch(e){}}
+const cliKey=n=>digits(n.cpf)||n.cli;
+function docsCliente(cpf){const d=S.dix&&S.dix.get("cliente/"+cpf);return (d&&d.outros)||[]}
+function docStatus(cpf){const fs=docsCliente(cpf);if(!fs.length)return {st:"falta",fs};
+  const vs=fs.map(f=>(S.docval["cliente/"+cpf+"/"+f]||{}).validade||"");const t=hoje();
+  if(vs.some(v=>v&&v>=t))return {st:"ok",fs};if(vs.some(v=>!v))return {st:"sem",fs};return {st:"vencido",fs}}
+const docChip=s=>s.st==="ok"?`<span class="tag ok">em dia</span>`:s.st==="vencido"?`<span class="tag bad">vencido</span>`:s.st==="sem"?`<span class="tag">sem validade</span>`:`<span class="tag bad">falta</span>`;
+function chutaValidade(nome){const u=nome.toUpperCase();
+  const mm=/(\d{2})[.\/-](20\d{2})/.exec(u);if(mm&&/BALANCETE/.test(u)){const y=+mm[2]+1;return `${y}-${mm[1]}-28`}
+  let ys=[...u.matchAll(/20(\d{2})/g)].map(x=>2000+ +x[1]);
+  if(!ys.length){const yy=/\b(\d{2})-(\d{2})\b/.exec(u);if(yy)ys=[2000+ +yy[1],2000+ +yy[2]]}
+  if(!ys.length)return "";const y=Math.max(...ys);
+  if(/IR|DIR|DIRPF|IRPF|DECLARA/.test(u))return `${y+1}-05-31`;return `${y+1}-12-31`}
+
+/* ---------- pendências ---------- */
+function pendGrupos(){
+  const t=hoje();const nat=n=>!S.f.nat||n.nat===S.f.nat;
+  const all=S.base.filter(nat).map(n=>({n,k:status(n),m:mk(n.id)}));
+  const ativ=all.filter(r=>r.n.ven>=t);
+  const G=[];
+  const add=(id,titulo,desc,rows,extra,tipo)=>G.push({id,titulo,desc,rows,extra,tipo:tipo||"nota"});
+  if(S.dix){
+    add("semBoleto","Antecipadas ou em cobrança sem boleto","O financeiro precisa do boleto para cobrar o sacado.",
+      ativ.filter(r=>(r.k==="antecipada"||r.k==="cobranca")&&!boletosNota(r.n).length),r=>"");
+    add("semDoc","Notas com fundo sem XML ou PDF anexado","Os fundos pedem o XML e o PDF de cada nota.",
+      ativ.filter(r=>marked(r.k)&&(()=>{const d=dixNota(r.n);return !d||!d.xml||!d.pdf})()),
+      r=>{const d=dixNota(r.n);return !d?"falta XML e PDF":!d.xml?"falta XML":"falta PDF"});
+    add("vencDif","Boleto com vencimento diferente da nota","O vencimento do boleto não bate com o vencimento da nota no Protheus (prorrogação?).",
+      ativ.filter(r=>(r.k==="antecipada"||r.k==="cobranca")&&(()=>{const b=boletosNota(r.n);return b.length&&!b.some(x=>x.ven===r.n.ven)})()),
+      r=>"boleto: "+boletosNota(r.n).map(b=>dBR(b.ven)).join(", "));
+  }
+  add("saldoMenor","Saldo menor que o valor cedido","Teve baixa parcial ou NCC depois da cessão: o boleto do fundo cobra a mais e pode precisar de recompra.",
+    all.filter(r=>r.k==="antecipada"&&r.n.saldo>0.009&&r.n.saldo<faceV(r.n)-0.01),r=>`cedido ${money(faceV(r.n))} · saldo ${money(r.n.saldo)}`);
+  add("zerada","Antecipadas com saldo zero antes do vencimento","A nota foi baixada no Protheus antes de vencer: o cliente pagou à Uniggel? Avisar o fundo ou fazer a recompra.",
+    ativ.filter(r=>r.m&&r.m.etapa==="cedida"&&!(r.n.saldo>0)&&!recP_(r.n)),r=>`cedido ${money(faceV(r.n))}`);
+  add("vencidas","Vencidas em aberto","Antecipadas ou em cobrança que já venceram e ainda têm saldo.",
+    all.filter(r=>(r.k==="antecipada"||r.k==="cobranca")&&r.n.ven<t&&r.n.saldo>0),r=>`venceu ${dBR(r.n.ven)}`);
+  add("blq","Com fundo, mas de cliente ou nota bloqueada","Notas bloqueadas que estão em análise, aprovadas, reservadas ou cedidas.",
+    all.filter(r=>r.m&&["analise","aprovada","reservada","cedida","cobranca"].includes(r.m.etapa)&&bloqueio(r.n)),r=>esc((bloqueio(r.n)||{}).motivo||"bloqueado"));
+  if(S.dix){const cl={};all.filter(r=>marked(r.k)&&r.n.ven>=t).forEach(r=>{const key=cliKey(r.n);const o=cl[key]||(cl[key]={key,cli:r.n.cli,nome:r.n.nome,cpf:r.n.cpf,n:0,v:0});o.n++;o.v+=r.k==="antecipada"?faceV(r.n):r.n.saldo});
+    const rows=Object.values(cl).map(o=>({o,s:docStatus(digits(o.cpf))})).filter(x=>x.s.st!=="ok").sort((a,b)=>b.o.v-a.o.v);
+    add("cliDoc","Clientes nos fundos sem IR ou balanço em dia","Anexe o IR ou o balanço no cadastro do cliente (aba Clientes).",rows,null,"cliente")}
+  const ces=cessoes().filter(c=>!(c.liquido>0)||!c.data);
+  add("ces","Cessões sem líquido ou sem data","Sem esses dois dados o site não calcula o custo da cessão.",ces,null,"cessao");
+  return G;
+}
+function renderPend(){
+  if(!S.base.length)return emptyBase();
+  if(!S.dix)carregarDix();
+  const G=pendGrupos();const tot=G.reduce((s,g)=>s+g.rows.length,0);
+  let h=`<div class="toolbar"><span class="muted" style="font-size:13px">${tot} pendências${S.dix?"":" · carregando os documentos anexados…"}</span><button class="btn sm" id="pd-rel" style="margin-left:auto">Atualizar</button></div>`;
+  for(const g of G){const open=S.pendOpen.has(g.id);const n=g.rows.length;
+    h+=`<div class="panel" style="margin-bottom:12px;padding:14px"><div class="row" style="justify-content:space-between;cursor:pointer" data-pg="${g.id}">
+      <div><b>${esc(g.titulo)}</b><div class="muted" style="font-size:12px">${esc(g.desc)}</div></div>
+      <span class="row" style="gap:8px;flex-wrap:nowrap">${n?`<span class="pill" style="--c:${g.id==="vencidas"||g.id==="saldoMenor"||g.id==="zerada"||g.id==="blq"?"var(--st-bloqueada)":"var(--st-analise)"}">${n}</span>`:`<span class="tag ok">tudo certo</span>`}${n?`<span class="muted">${open?"▲":"▼"}</span>`:""}</span></div>`;
+    if(open&&n){
+      if(g.tipo==="nota"){const rows=g.rows.slice().sort((a,b)=>a.n.ven<b.n.ven?-1:1);
+        h+=`<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>NF</th><th>Cliente</th><th>Vencimento</th><th class="r">Valor</th><th>Situação</th><th>Fundo / cessão</th><th>Detalhe</th></tr></thead><tbody>
+        ${rows.slice(0,300).map(r=>`<tr class="click" data-id="${r.n.id}"><td class="num">${r.n.num.replace(/^0+/,"")}${r.n.par?`<span class="muted">/${esc(r.n.par)}</span>`:""}</td><td><div class="nome">${esc(r.n.nome)}</div></td><td class="num">${dBR(r.n.ven)}</td><td class="r num">${money(amount(r.n,r.k))}</td><td>${pill(r.k)}</td><td>${r.m?`<b>${esc(r.m.fundo)}</b> <span class="muted">${esc(r.m.cessao||"")}</span>`:""}</td><td style="font-size:12px">${g.extra?g.extra(r):""}</td></tr>`).join("")}
+        <tr><td colspan="3"><b>Total</b></td><td class="r num"><b>${money(rows.reduce((s,r)=>s+amount(r.n,r.k),0))}</b></td><td colspan="3">${S.canWrite&&rows.length?`<button class="btn sm" data-pgsel="${g.id}">Selecionar na aba Notas</button>`:""}</td></tr></tbody></table></div>`}
+      else if(g.tipo==="cliente"){h+=`<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>Cliente</th><th>CPF/CNPJ</th><th class="r">Notas nos fundos</th><th class="r">Valor</th><th>Documentos</th></tr></thead><tbody>
+        ${g.rows.slice(0,300).map(x=>`<tr class="click" data-pcli="${esc(x.o.key)}"><td><div class="nome">${esc(x.o.nome)}</div></td><td class="num">${fmtDoc(x.o.cpf)}</td><td class="r num">${x.o.n}</td><td class="r num">${money(x.o.v)}</td><td>${docChip(x.s)}</td></tr>`).join("")}</tbody></table></div>`}
+      else{h+=`<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>Fundo</th><th>Cessão</th><th class="r">Valor</th><th>Falta</th></tr></thead><tbody>
+        ${g.rows.map(c=>`<tr><td><b>${esc(c.fundo)}</b></td><td class="num">${esc(c.cessao)||"–"}</td><td class="r num">${money(c.bruto)}</td><td>${[!(c.liquido>0)?"líquido":"",!c.data?"data da cessão":""].filter(Boolean).join(" e ")}</td></tr>`).join("")}</tbody></table></div>
+        <p class="muted" style="font-size:12px;margin:8px 0 0">Preencha no Painel, na tabela Termos de cessão.</p>`}}
+    h+=`</div>`}
+  $("#main").innerHTML=h;
+  $("#main").onclick=e=>{
+    if(e.target.id==="pd-rel"){S.dix=null;carregarDix();render();return}
+    const sl=e.target.closest("[data-pgsel]");if(sl){const g=pendGrupos().find(x=>x.id===sl.dataset.pgsel);S.sel=new Set(g.rows.map(r=>r.n.id));S.pend=null;S.q="";S.fundoF="";S.stF=new Set();S.pendIds=new Set(S.sel);S.pend="lista";S.pendLabel=g.titulo;go("notas");return}
+    const tr=e.target.closest("tr[data-id]");if(tr){openNota(tr.dataset.id);return}
+    const pc=e.target.closest("tr[data-pcli]");if(pc){const g=pendGrupos().find(x=>x.id==="cliDoc");const x=g&&g.rows.find(y=>y.o.key===pc.dataset.pcli);if(x)abrirClientePor(x.o.key);return}
+    const pg=e.target.closest("[data-pg]");if(pg){const id=pg.dataset.pg;S.pendOpen.has(id)?S.pendOpen.delete(id):S.pendOpen.add(id);render()}
+  };
+}
+function abrirClientePor(key){const ns=S.base.filter(n=>cliKey(n)===key);if(!ns.length)return;const r=ns.map(n=>({n,k:status(n),a:amount(n,status(n))}));
+  const o={key,cli:ns[0].cli,nome:ns[0].nome,cpf:ns[0].cpf,livre:0,fundo:0,blq:0,n:ns.length};r.forEach(x=>{if(x.k==="livre")o.livre+=x.a;else if(marked(x.k))o.fundo+=x.a;else if(x.k==="bloqueada")o.blq+=x.a});openCliente(o)}
+
+/* ---------- agenda de vencimentos ---------- */
+S.agOpen=new Set();
+function renderAgenda(){
+  if(!S.base.length)return emptyBase();
+  const t=hoje();const nat=n=>!S.f.nat||n.nat===S.f.nat;
+  const rows=S.base.filter(nat).map(n=>({n,k:status(n),m:mk(n.id)})).filter(r=>r.k==="antecipada"||r.k==="cobranca");
+  const val=r=>r.k==="antecipada"?faceV(r.n):r.n.saldo;
+  const venc=rows.filter(r=>r.n.ven<t&&r.n.saldo>0);
+  const fut=rows.filter(r=>r.n.ven>=t&&(r.k==="antecipada"||r.n.saldo>0));
+  const byD={};fut.forEach(r=>{(byD[r.n.ven]=byD[r.n.ven]||[]).push(r)});
+  const ds=Object.keys(byD).sort();
+  const fundos=[...new Set(fut.map(r=>r.k==="cobranca"?"Cobrança simples":r.m.fundo))].sort();
+  const recP=Object.entries(S.recompras).filter(([,r])=>r.situacao!=="feita");
+  let h=`<div class="kpis"><div class="kpi" style="--k:var(--st-antecipada)"><span class="eyebrow">A vencer</span><span class="v">${money(fut.reduce((s,r)=>s+val(r),0))}</span><span class="s">${fut.length} notas antecipadas ou em cobrança</span></div>
+    <div class="kpi" style="--k:var(--st-bloqueada)"><span class="eyebrow">Vencidas em aberto</span><span class="v">${money(venc.reduce((s,r)=>s+r.n.saldo,0))}</span><span class="s">${venc.length} notas</span></div>
+    <div class="kpi" style="--k:var(--st-recompra)"><span class="eyebrow">Recompras pendentes</span><span class="v">${money(recP.reduce((s,[,r])=>s+(r.valor||0),0))}</span><span class="s">${recP.length} notas</span></div></div>`;
+  // resumo mês x fundo
+  const mes={};fut.forEach(r=>{const k=r.n.ven.slice(0,7),f=r.k==="cobranca"?"Cobrança simples":r.m.fundo;const o=mes[k]||(mes[k]={});o[f]=(o[f]||0)+val(r)});
+  h+=`<div class="panel" style="margin-bottom:16px"><h2>Por mês e fundo</h2><div class="tbl-wrap"><table><thead><tr><th>Mês</th>${fundos.map(f=>`<th class="r">${esc(f)}</th>`).join("")}<th class="r">Total</th></tr></thead><tbody>
+    ${Object.keys(mes).sort().map(k=>`<tr><td><b>${MES[+k.slice(5,7)-1]}/${k.slice(0,4)}</b></td>${fundos.map(f=>`<td class="r num">${mes[k][f]?short(mes[k][f]):"–"}</td>`).join("")}<td class="r num"><b>${short(Object.values(mes[k]).reduce((a,b)=>a+b,0))}</b></td></tr>`).join("")}
+    </tbody></table></div></div>`;
+  h+=`<div class="panel"><h2>Dia a dia</h2><div class="tbl-wrap"><table><thead><tr><th>Vencimento</th><th>Fundos</th><th class="r">Notas</th><th class="r">Total</th></tr></thead><tbody>`;
+  for(const d of ds){const rs=byD[d];const g={};rs.forEach(r=>{const f=r.k==="cobranca"?"Cobrança simples":r.m.fundo;g[f]=(g[f]||0)+val(r)});
+    h+=`<tr class="click" data-ag="${d}"><td class="num"><b>${dBR(d)}</b></td><td style="font-size:12px">${Object.entries(g).sort((a,b)=>b[1]-a[1]).map(([f,v])=>`<span class="tag" style="margin:1px">${esc(f)} ${short(v)}</span>`).join(" ")}</td><td class="r num">${rs.length}</td><td class="r num"><b>${money(rs.reduce((s,r)=>s+val(r),0))}</b></td></tr>`;
+    if(S.agOpen.has(d))h+=rs.sort((a,b)=>val(b)-val(a)).map(r=>`<tr class="click" data-id="${r.n.id}" style="background:var(--sunk)"><td class="num" style="padding-left:24px">NF ${r.n.num.replace(/^0+/,"")}${r.n.par?"/"+esc(r.n.par):""}</td><td><div class="nome">${esc(r.n.nome)}</div><span class="muted" style="font-size:11px">${r.k==="cobranca"?"Cobrança simples":esc(r.m.fundo+" "+(r.m.cessao||""))}</span></td><td></td><td class="r num">${money(val(r))}</td></tr>`).join("")}
+  h+=`</tbody></table></div></div>`;
+  if(venc.length)h+=`<div class="panel" style="margin-top:16px"><h2>Vencidas em aberto</h2><div class="tbl-wrap"><table><thead><tr><th>NF</th><th>Cliente</th><th>Venceu</th><th>Fundo</th><th class="r">Saldo</th></tr></thead><tbody>
+    ${venc.sort((a,b)=>a.n.ven<b.n.ven?-1:1).map(r=>`<tr class="click" data-id="${r.n.id}"><td class="num">${r.n.num.replace(/^0+/,"")}</td><td><div class="nome">${esc(r.n.nome)}</div></td><td class="num">${dBR(r.n.ven)}</td><td>${r.k==="cobranca"?"Cobrança simples":esc(r.m.fundo)}</td><td class="r num">${money(r.n.saldo)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  $("#main").innerHTML=h;
+  $("#main").onclick=e=>{const tr=e.target.closest("tr[data-id]");if(tr){openNota(tr.dataset.id);return}
+    const a=e.target.closest("[data-ag]");if(a){const d=a.dataset.ag;S.agOpen.has(d)?S.agOpen.delete(d):S.agOpen.add(d);render()}};
+}
+
+/* ---------- custo da cessão ---------- */
+function custoCes(c){if(!(c.liquido>0)||!c.data||!c.fv)return null;
+  const d0=Date.parse(c.data),prazo=(c.fv/c.bruto-d0)/864e5;if(!(prazo>0))return null;
+  return {prazo,am:Math.pow(c.bruto/c.liquido,30/prazo)-1}}
+const pct=v=>(v*100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
+function custoPorFundo(ces){const g={};ces.forEach(c=>{const x=custoCes(c);if(!x)return;const o=g[c.fundo]||(g[c.fundo]={fundo:c.fundo,bruto:0,liq:0,pz:0,n:0});o.bruto+=c.bruto;o.liq+=c.liquido;o.pz+=x.prazo*c.bruto;o.n++});
+  return Object.values(g).map(o=>{const pz=o.pz/o.bruto;return {...o,prazo:pz,am:Math.pow(o.bruto/o.liq,30/pz)-1}}).sort((a,b)=>a.am-b.am)}
+function painelCusto(ces){const L=custoPorFundo(ces);if(!L.length)return `<div class="panel" style="margin-bottom:16px"><h2>Custo por fundo</h2><p class="muted" style="font-size:13px;margin:0">Informe o líquido e a data de cada cessão na tabela acima para comparar os fundos.</p></div>`;
+  return `<div class="panel" style="margin-bottom:16px"><h2>Custo por fundo</h2><div class="tbl-wrap"><table><thead><tr><th>Fundo</th><th class="r">Cessões</th><th class="r">Valor das notas</th><th class="r">Líquido</th><th class="r">Custo</th><th class="r">Prazo médio</th><th class="r">Taxa ao mês</th></tr></thead><tbody>
+  ${L.map((o,i)=>`<tr><td><b>${esc(o.fundo)}</b>${i===0&&L.length>1?` <span class="tag ok">mais barato</span>`:""}</td><td class="r num">${o.n}</td><td class="r num">${money(o.bruto)}</td><td class="r num">${money(o.liq)}</td><td class="r num">${money(o.bruto-o.liq)}</td><td class="r num">${Math.round(o.prazo)} dias</td><td class="r num"><b>${pct(o.am)}</b></td></tr>`).join("")}
+  </tbody></table></div><p class="muted" style="font-size:12px;margin:8px 0 0">Taxa ao mês equivalente: (valor das notas ÷ líquido) elevado a (30 ÷ prazo médio), menos 1. Só entram as cessões com líquido e data informados.</p></div>`}
+
+/* ---------- envio para o fundo ---------- */
+async function gerarEnvio(ids,fundo){
+  const ns=ids.map(id=>S.byId.get(id)).filter(Boolean).sort((a,b)=>a.ven<b.ven?-1:a.ven>b.ven?1:a.nome.localeCompare(b.nome));if(!ns.length)return;
+  if(!window.JSZip||!window.XLSX)return toast("Não deu para carregar as ferramentas do arquivo. Recarregue a página.");
+  toast(`Montando o envio de ${ns.length} notas…`);
+  const z=new JSZip();const av=[];
+  const rows=[["Filial","NF","Parcela","Emissão","Vencimento","Cliente","CPF/CNPJ","Valor"]];
+  ns.forEach(n=>{rows.push([n.fil,parseInt(n.num,10),n.par||"",dBR(n.emi),dBR(n.ven),n.nome,fmtDoc(n.cpf),Math.round(n.saldo*100)/100]);if(bloqueio(n))av.push([n.num,n.nome,"Cliente ou nota bloqueada: "+((bloqueio(n)||{}).motivo||"")]);if(naoAutorizado(n))av.push([n.num,n.nome,"Cliente: "+naoAutorizado(n)])});
+  rows.push(["","","","","","Total","",Math.round(ns.reduce((s,n)=>s+n.saldo,0)*100)/100]);
+  let falt=0;await pool(ns,async n=>{const fs=(await listDir("nota/"+nfKey(n))).filter(f=>f.tipo==="XML da nota"||f.tipo==="PDF da nota");
+    if(!fs.some(f=>f.tipo==="XML da nota")||!fs.some(f=>f.tipo==="PDF da nota")){falt++;av.push([n.num,n.nome,"Falta "+(!fs.some(f=>f.tipo==="XML da nota")?"XML ":"")+(!fs.some(f=>f.tipo==="PDF da nota")?"PDF":"")])}
+    for(const f of fs){const {data,error}=await SB.storage.from(BUCKET).download(f.path);if(!error&&data)z.file((f.tipo==="XML da nota"?"XML/":"PDF/")+f.name,data)}},4);
+  const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:7},{wch:9},{wch:8},{wch:11},{wch:11},{wch:44},{wch:19},{wch:14}];XLSX.utils.book_append_sheet(wb,ws,"Notas");
+  if(av.length){const wa=XLSX.utils.aoa_to_sheet([["NF","Cliente","Aviso"],...av]);XLSX.utils.book_append_sheet(wb,wa,"Avisos")}
+  const nome=`Envio ${slug(fundo||"fundo")} ${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}`;
+  z.file(nome+".xlsx",XLSX.write(wb,{type:"array",bookType:"xlsx"}));
+  const blob=await z.generateAsync({type:"blob"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=nome+".zip";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  toast(`Envio pronto: ${ns.length} notas${falt?` · ${falt} sem XML ou PDF (veja a aba Avisos)`:""}${av.length-falt>0?` · ${av.length-falt} avisos de bloqueio`:""}`)}
+
+/* ---------- documentos do cliente (IR, balanço) ---------- */
+async function renderDocsCad(o){
+  const box=$("#docs-cad");if(!box)return;const cpf=digits(o.cpf);if(!cpf){box.innerHTML="";return}
+  const dir="cliente/"+cpf;const fs=await listDir(dir);const t=hoje();
+  box.innerHTML=`<span class="eyebrow">IR, balanço e outros documentos do cliente</span>
+    <div class="list" style="margin-top:8px">${fs.length?fs.map(f=>{const v=(S.docval[f.path]||{}).validade||"";const st=!v?`<span class="tag">sem validade</span>`:v<t?`<span class="tag bad">vencido ${dBR(v)}</span>`:`<span class="tag ok">válido até ${dBR(v)}</span>`;
+      return `<div class="it"><span style="min-width:0"><span style="word-break:break-all">${esc(f.name)}</span> <span class="muted" style="font-size:11px">${kb(f.size)}</span><br>${st}</span><span class="row" style="gap:6px;flex-wrap:nowrap">${S.canWrite?`<input type="date" data-val="${esc(f.path)}" value="${v}" aria-label="Validade" style="width:140px">`:""}<button class="btn sm" data-dl="${esc(f.path)}" data-nm="${esc(f.name)}">Baixar</button>${S.canWrite?`<button class="btn sm danger" data-rm="${esc(f.path)}">Apagar</button>`:""}</span></div>`}).join(""):`<div class="muted" style="font-size:12px">Nenhum documento anexado.</div>`}</div>
+    ${S.canWrite?`<div class="form" style="margin-top:10px"><div class="row"><label style="flex:1">Tipo<select id="dc-tipo"><option>IR</option><option>Balanço</option><option>Balancete</option><option>Contrato social</option><option>Outro</option></select></label><label style="flex:1">Válido até<input type="date" id="dc-val"></label></div>
+      <label>Anexar arquivo<input type="file" id="dc-up" multiple accept=".pdf,.png,.jpg,.jpeg"></label><span class="muted" style="font-size:11px" id="dc-st"></span></div>`:""}`;
+  box.onclick=async e=>{const d=e.target.closest("[data-dl]");if(d)return baixar(d.dataset.dl,d.dataset.nm);
+    const r=e.target.closest("[data-rm]");if(r){if(r.dataset.c!=="1"){r.dataset.c="1";r.textContent="Confirmar";return}
+      const {error}=await SB.storage.from(BUCKET).remove([r.dataset.rm]);toast(error?"Não deu para apagar.":"Documento apagado");if(!error)logArq("apagado",r.dataset.rm);carregarDix();renderDocsCad(o)}};
+  box.onchange=async e=>{const i=e.target.closest("[data-val]");if(i){await salvaValidade({[i.dataset.val]:{validade:i.value}});toast("Validade salva");renderDocsCad(o);return}
+    if(e.target.id==="dc-up"){const tipo=$("#dc-tipo").value,vv=$("#dc-val").value,st=$("#dc-st");const val={};let ok=0;
+      for(const f of e.target.files){st.textContent=`Enviando ${f.name}…`;const p=dir+"/"+slug(tipo+" - "+f.name);
+        const {error}=await SB.storage.from(BUCKET).upload(p,f,{upsert:true,contentType:f.type||undefined});if(!error){ok++;val[p]={validade:vv||chutaValidade(tipo+" "+f.name)}}}
+      if(ok){await salvaValidade(val);logArq("enviado",`${ok} documento(s) de ${o.nome}`)}toast(ok+" documento(s) anexado(s)");carregarDix();renderDocsCad(o)}};
+}
+async function salvaValidade(m){try{await S.db.doc("config/docvalidade").update({m})}catch(e){try{await S.db.doc("config/docvalidade").set({m:{...S.docval,...m}})}catch(e2){toast(dbErr(e2))}}}
+
+/* ---------- histórico e backup ---------- */
+function descHist(h){const d=h.depois||{},a=h.antes||{};
+  if(h.col==="arquivo")return `Arquivo ${esc(h.acao)}: ${esc(h.doc_id)}`;
+  if(h.col==="marcas"){const n=S.byId.get(h.doc_id);const nm=n?`NF ${n.num.replace(/^0+/,"")}${n.par?"/"+n.par:""} ${n.nome}`:h.doc_id;
+    const f=x=>x&&x.fundo?`${x.fundo} ${x.etapa||""} ${x.cessao||""}`.trim():"sem fundo";
+    return `${esc(nm)}: ${h.acao==="insert"?"marcada "+esc(f(d)):esc(f(a))+" → "+esc(f(d))}`}
+  if(h.col==="config"&&h.doc_id==="cessoes")return "Cessões: "+Object.entries(d).map(([k,v])=>`${esc(k.replace("|"," "))} ${v&&v.liquido?"líquido "+money(v.liquido):""} ${v&&v.data?"data "+dBR(v.data):""}`).join("; ");
+  if(h.col==="config"&&h.doc_id==="clientes")return "Clientes: "+Object.entries(d).map(([k,v])=>esc((v&&v.nome)||k)).join(", ");
+  if(h.col==="config"&&h.doc_id==="docvalidade")return "Validade de documentos: "+Object.keys(d).map(k=>esc(k.split("/").pop())).join(", ");
+  if(h.col==="bloqueios")return h.acao==="delete"?`Desbloqueado: ${esc(a.nome||h.doc_id)}`:`Bloqueado: ${esc(d.nome||h.doc_id)} ${esc(d.motivo||"")}`;
+  if(h.col==="recompras")return `Recompra NF ${esc(String((d.nf||a.nf||"")).replace(/^0+/,""))} ${esc(d.nome||a.nome||"")}: ${esc(d.situacao||h.acao)}`;
+  return `${esc(h.col)}/${esc(h.doc_id)} (${esc(h.acao)})`}
+async function renderHistBackup(){
+  const box=$("#hist-box");if(!box)return;
+  const [{data:hs},bk]=await Promise.all([SB.from("historico").select("em,email,col,doc_id,acao,antes,depois").order("em",{ascending:false}).limit(150),
+    S.canWrite?SB.from("backups").select("id,em,docs").order("em",{ascending:false}).limit(8):Promise.resolve({data:[]})]);
+  const bks=(bk&&bk.data)||[];
+  box.innerHTML=`${S.canWrite?`<div class="panel" style="margin-top:16px"><h2>Backup</h2>
+    <p style="margin:0 0 8px;font-size:13px">${bks.length?`Último backup: <b>${new Date(bks[0].em).toLocaleString("pt-BR")}</b> (${bks[0].docs} registros). O site faz um backup sozinho toda segunda-feira de manhã e guarda os 8 últimos.`:"Nenhum backup ainda."}</p>
+    <div class="row" style="gap:8px"><button class="btn" id="bk-now">Fazer backup agora</button>${bks.length?`<button class="btn" id="bk-dl">Baixar o último backup</button>`:""}</div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">O arquivo baixado pode ser restaurado pela página restaurar.html, se um dia precisar.</p></div>`:""}
+   <div class="panel" style="margin-top:16px"><h2>Histórico de alterações</h2>
+    ${(hs||[]).length?`<div class="tbl-wrap"><table><thead><tr><th>Quando</th><th>Quem</th><th>O que mudou</th></tr></thead><tbody>
+    ${hs.map(h=>`<tr><td class="num" style="white-space:nowrap">${new Date(h.em).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}</td><td style="font-size:12px">${esc((h.email||"sistema").split("@")[0])}</td><td style="font-size:12px">${descHist(h)}</td></tr>`).join("")}
+    </tbody></table></div>`:`<p class="muted" style="font-size:13px;margin:0">Nenhuma alteração registrada ainda. A partir de agora, toda marcação, bloqueio, recompra e arquivo fica registrado aqui.</p>`}</div>`;
+  const bn=$("#bk-now");if(bn)bn.onclick=async()=>{bn.disabled=true;const {error}=await SB.rpc("fazer_backup");toast(error?"Não deu para fazer o backup.":"Backup feito");renderHistBackup()};
+  const bd=$("#bk-dl");if(bd)bd.onclick=async()=>{const {data,error}=await SB.from("backups").select("em,dados").eq("id",bks[0].id).single();if(error)return toast("Não deu para baixar.");
+    const blob=new Blob([JSON.stringify({docs:data.dados,em:data.em})],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`backup-descontos-${data.em.slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove()};
+}
+
 let rq=0;function render(){cancelAnimationFrame(rq);rq=requestAnimationFrame(()=>{
   refilter();
   renderBaseChip();renderScope();
   if(!S.db&&S.loaded){$("#main").innerHTML=`<div class="panel empty"><h2>Sem acesso aos dados</h2><p>Entre com seu e-mail e senha para ver e editar as notas.</p></div>`;return}
   if(!S.loaded){return}
-  ({painel:renderPainel,notas:renderNotas,clientes:renderClientes,bloqueios:renderBloqueios,importar:renderImportar})[S.tab]();
+  ({painel:renderPainel,pendencias:renderPend,notas:renderNotas,clientes:renderClientes,agenda:renderAgenda,bloqueios:renderBloqueios,importar:renderImportar})[S.tab]();
   if(S.tab!=="notas")renderBulk();
 })}
 
@@ -1118,7 +1344,7 @@ async function loadChunks(meta){
 }
 
 async function boot(){
-  const h=(location.hash||"").slice(1);if(["painel","notas","clientes","bloqueios","importar"].includes(h))S.tab=h;
+  const h=(location.hash||"").slice(1);if(["painel","pendencias","notas","clientes","agenda","bloqueios","importar"].includes(h))S.tab=h;
   document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===S.tab));
   renderBaseChip();
   const user=await window.AUTH_READY;
@@ -1138,6 +1364,8 @@ async function boot(){
   db.doc("config/vencnovo").onSnapshot(s=>{S.vnovo=(s.exists&&s.data().m)||{};applyBaixas();render()},onErr);
   db.doc("config/faturado").onSnapshot(s=>{S.fat=s.exists?s.data():null;render()},onErr);
   db.doc("config/cessoes").onSnapshot(s=>{S.cessoes=(s.exists&&s.data().m)||{};render()},onErr);
+  db.doc("config/docvalidade").onSnapshot(s=>{S.docval=(s.exists&&s.data().m)||{};if(S.tab==="pendencias"||S.tab==="clientes")render()},onErr);
+  carregarDix();
   db.doc("config/fundos").onSnapshot(s=>{S.fundos=(s.exists&&s.data().lista)||[];datalists()},onErr);
 }
 boot();
